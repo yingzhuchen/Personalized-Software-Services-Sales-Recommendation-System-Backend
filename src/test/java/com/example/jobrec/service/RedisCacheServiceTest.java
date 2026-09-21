@@ -1,7 +1,11 @@
 package com.example.jobrec.service;
 
+import com.example.jobrec.cache.LocalL1Cache;
+import com.example.jobrec.cache.LocalL1CacheTest;
+import com.example.jobrec.cache.MysqlFallbackLimiter;
 import com.example.jobrec.cache.RedisCacheMetrics;
 import com.example.jobrec.cache.RedisCircuitBreaker;
+import com.example.jobrec.cache.RequestCoalescer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,9 +15,16 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -134,5 +145,88 @@ class RedisCacheServiceTest {
         assertTrue(result.isEmpty());
         assertEquals(1L, metrics.getErrors());
         assertEquals(1L, metrics.getMisses());
+    }
+
+    @Test
+    void getSearchResult_servesL1WithoutHittingRedisOnSecondRead() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("search:lat=1.0&lon=2.0&keyword=crm")).thenReturn("[{\"id\":\"1\"}]");
+
+        assertEquals("[{\"id\":\"1\"}]", cacheService.getSearchResult(1.0, 2.0, "crm"));
+        assertEquals("[{\"id\":\"1\"}]", cacheService.getSearchResult(1.0, 2.0, "crm"));
+
+        verify(valueOps, times(1)).get(anyString());
+        assertEquals(1L, metrics.getL1Hits());
+    }
+
+    @Test
+    void getSearchResult_servesStaleL1WhenRedisCircuitIsOpen() {
+        java.util.concurrent.atomic.AtomicLong millis = new java.util.concurrent.atomic.AtomicLong(1_000_000L);
+        LocalL1Cache l1 = new LocalL1Cache(10, 50L, 5_000L, LocalL1CacheTest.clock(millis));
+        cacheService = new RedisCacheService(redis, circuitBreaker, metrics, l1,
+                new RequestCoalescer(metrics),
+                new MysqlFallbackLimiter(circuitBreaker, metrics, 32));
+
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get("search:lat=1.0&lon=2.0&keyword=crm")).thenReturn("[1]");
+        assertEquals("[1]", cacheService.getSearchResult(1.0, 2.0, "crm"));
+
+        when(valueOps.get(anyString())).thenThrow(new RuntimeException("down"));
+        cacheService.getFavoriteResult("trip");
+        cacheService.getFavoriteResult("trip");
+        assertEquals(RedisCircuitBreaker.State.OPEN, circuitBreaker.getState());
+
+        millis.addAndGet(80L);
+        assertEquals("[1]", cacheService.getSearchResult(1.0, 2.0, "crm"));
+        assertTrue(metrics.getL1StaleHits() >= 1L);
+    }
+
+    @Test
+    void getOrLoadFavoriteResult_coalescesConcurrentMysqlLoads() throws Exception {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get(anyString())).thenReturn(null);
+
+        java.util.concurrent.atomic.AtomicInteger loads = new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch ready = new CountDownLatch(8);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        try {
+            List<Future<String>> futures = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return cacheService.getOrLoadFavoriteResult("user-1", () -> {
+                        loads.incrementAndGet();
+                        Thread.sleep(60L);
+                        return "[{\"id\":\"1\"}]";
+                    });
+                }));
+            }
+            assertTrue(ready.await(2, TimeUnit.SECONDS));
+            start.countDown();
+            for (Future<String> future : futures) {
+                assertEquals("[{\"id\":\"1\"}]", future.get(2, TimeUnit.SECONDS));
+            }
+            assertEquals(1, loads.get());
+            assertTrue(metrics.getCoalescedJoins() >= 7L);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void getOrLoadFavoriteResult_fillsL1WhenRedisIsDown() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get(anyString())).thenThrow(new RuntimeException("down"));
+        cacheService.getFavoriteResult("trip");
+        cacheService.getFavoriteResult("trip");
+        assertEquals(RedisCircuitBreaker.State.OPEN, circuitBreaker.getState());
+
+        String loaded = cacheService.getOrLoadFavoriteResult("user-1", () -> "[{\"id\":\"1\"}]");
+        assertEquals("[{\"id\":\"1\"}]", loaded);
+        assertEquals("[{\"id\":\"1\"}]", cacheService.getFavoriteResult("user-1"));
+        verify(valueOps, never()).set(anyString(), anyString());
+        assertEquals(1L, metrics.getMysqlFallbacks());
     }
 }

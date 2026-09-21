@@ -15,6 +15,12 @@ public class RedisCacheMetrics {
     private final AtomicLong misses = new AtomicLong();
     private final AtomicLong errors = new AtomicLong();
     private final AtomicLong circuitOpenSkips = new AtomicLong();
+    private final AtomicLong l1Hits = new AtomicLong();
+    private final AtomicLong l1Misses = new AtomicLong();
+    private final AtomicLong l1StaleHits = new AtomicLong();
+    private final AtomicLong coalescedJoins = new AtomicLong();
+    private final AtomicLong mysqlFallbacks = new AtomicLong();
+    private final AtomicLong mysqlFallbackRejected = new AtomicLong();
     private final RedisCircuitBreaker circuitBreaker;
 
     public RedisCacheMetrics(RedisCircuitBreaker circuitBreaker) {
@@ -37,6 +43,31 @@ public class RedisCacheMetrics {
         circuitOpenSkips.incrementAndGet();
     }
 
+    public void recordL1Hit() {
+        l1Hits.incrementAndGet();
+    }
+
+    public void recordL1Miss() {
+        l1Misses.incrementAndGet();
+    }
+
+    public void recordL1StaleHit() {
+        l1StaleHits.incrementAndGet();
+        l1Hits.incrementAndGet();
+    }
+
+    public void recordCoalescedJoin() {
+        coalescedJoins.incrementAndGet();
+    }
+
+    public void recordMysqlFallback() {
+        mysqlFallbacks.incrementAndGet();
+    }
+
+    public void recordMysqlFallbackRejected() {
+        mysqlFallbackRejected.incrementAndGet();
+    }
+
     public long getHits() {
         return hits.get();
     }
@@ -53,6 +84,30 @@ public class RedisCacheMetrics {
         return circuitOpenSkips.get();
     }
 
+    public long getL1Hits() {
+        return l1Hits.get();
+    }
+
+    public long getL1Misses() {
+        return l1Misses.get();
+    }
+
+    public long getL1StaleHits() {
+        return l1StaleHits.get();
+    }
+
+    public long getCoalescedJoins() {
+        return coalescedJoins.get();
+    }
+
+    public long getMysqlFallbacks() {
+        return mysqlFallbacks.get();
+    }
+
+    public long getMysqlFallbackRejected() {
+        return mysqlFallbackRejected.get();
+    }
+
     public double getHitRate() {
         long total = hits.get() + misses.get();
         if (total == 0L) {
@@ -67,6 +122,12 @@ public class RedisCacheMetrics {
         snapshot.put("misses", getMisses());
         snapshot.put("errors", getErrors());
         snapshot.put("circuitOpenSkips", getCircuitOpenSkips());
+        snapshot.put("l1Hits", getL1Hits());
+        snapshot.put("l1Misses", getL1Misses());
+        snapshot.put("l1StaleHits", getL1StaleHits());
+        snapshot.put("coalescedJoins", getCoalescedJoins());
+        snapshot.put("mysqlFallbacks", getMysqlFallbacks());
+        snapshot.put("mysqlFallbackRejected", getMysqlFallbackRejected());
         snapshot.put("hitRate", getHitRate());
         snapshot.put("circuitState", circuitBreaker.getState().name());
         snapshot.put("redisAvailable", circuitBreaker.isAvailable());
@@ -82,5 +143,11 @@ public class RedisCacheMetrics {
         misses.set(0);
         errors.set(0);
         circuitOpenSkips.set(0);
+        l1Hits.set(0);
+        l1Misses.set(0);
+        l1StaleHits.set(0);
+        coalescedJoins.set(0);
+        mysqlFallbacks.set(0);
+        mysqlFallbackRejected.set(0);
     }
 }

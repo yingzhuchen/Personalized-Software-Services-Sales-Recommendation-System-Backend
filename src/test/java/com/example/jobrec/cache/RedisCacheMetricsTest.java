@@ -45,6 +45,8 @@ class RedisCacheMetricsTest {
         assertEquals(0L, snapshot.get("misses"));
         assertEquals(1L, snapshot.get("errors"));
         assertEquals(1L, snapshot.get("circuitOpenSkips"));
+        assertEquals(0L, snapshot.get("l1Hits"));
+        assertEquals(0L, snapshot.get("mysqlFallbackRejected"));
         assertEquals("CLOSED", snapshot.get("circuitState"));
         assertTrue((Boolean) snapshot.get("redisAvailable"));
     }
