@@ -11,6 +11,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,7 +26,7 @@ class RecommendationProfileServiceTest {
 
     @Test
     void getTopKeywords_returnsCachedKeywordsWithoutDatabaseLookup() {
-        when(redisCacheService.getRecommendationKeywords("user-1"))
+        when(redisCacheService.getOrLoadRecommendationKeywords(eq("user-1"), any()))
                 .thenReturn("crm,analytics,ai");
 
         List<String> keywords = profileService.getTopKeywords("user-1");

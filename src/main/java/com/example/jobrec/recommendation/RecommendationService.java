@@ -1,8 +1,8 @@
 package com.example.jobrec.recommendation;
 
-import com.example.jobrec.db.MySQLConnection;
 import com.example.jobrec.entity.Item;
 import com.example.jobrec.external.SerpAPIClient;
+import com.example.jobrec.service.HistoryService;
 import com.example.jobrec.service.ProductSearchService;
 import org.springframework.stereotype.Service;
 
@@ -17,12 +17,15 @@ public class RecommendationService {
 
     private final RecommendationProfileService profileService;
     private final ProductSearchService productSearchService;
+    private final HistoryService historyService;
     private final SerpAPIClient serpAPIClient = new SerpAPIClient();
 
     public RecommendationService(RecommendationProfileService profileService,
-                                 ProductSearchService productSearchService) {
+                                 ProductSearchService productSearchService,
+                                 HistoryService historyService) {
         this.profileService = profileService;
         this.productSearchService = productSearchService;
+        this.historyService = historyService;
     }
 
     /**
@@ -32,9 +35,7 @@ public class RecommendationService {
     public List<Item> recommendItems(String userId, double lat, double lon) {
         List<Item> recommendedItems = new ArrayList<>();
 
-        MySQLConnection connection = new MySQLConnection();
-        Set<String> favoritedItemIds = connection.getFavoriteItemIds(userId);
-        connection.close();
+        Set<String> favoritedItemIds = favoriteIds(userId);
 
         List<String> topKeywords = profileService.getTopKeywords(userId);
         if (topKeywords.isEmpty()) {
@@ -68,13 +69,16 @@ public class RecommendationService {
 
     public List<Item> searchProducts(double lat, double lon, String keyword) {
         String cacheKey = keyword == null ? "" : keyword;
-        String cachedResult = profileService.getCachedSearchResult(lat, lon, cacheKey);
-        if (cachedResult != null) {
-            return profileService.parseItems(cachedResult);
-        }
+        String cachedResult = profileService.getOrLoadSearchResult(lat, lon, cacheKey, () ->
+                productSearchService.search(lat, lon, keyword));
+        return profileService.parseItems(cachedResult);
+    }
 
-        List<Item> items = productSearchService.search(lat, lon, keyword);
-        profileService.cacheSearchResult(lat, lon, cacheKey, items);
-        return items;
+    private Set<String> favoriteIds(String userId) {
+        Set<String> ids = new HashSet<>();
+        for (Item item : historyService.getFavorites(userId)) {
+            ids.add(item.getId());
+        }
+        return ids;
     }
 }

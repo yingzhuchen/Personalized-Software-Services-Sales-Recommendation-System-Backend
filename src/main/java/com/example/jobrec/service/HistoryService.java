@@ -32,24 +32,26 @@ public class HistoryService {
     }
 
     public Set<Item> getFavorites(String userId) {
-        String cachedResult = redisCacheService.getFavoriteResult(userId);
-        if (cachedResult != null) {
+        String cachedResult = redisCacheService.getOrLoadFavoriteResult(userId, () -> {
+            MySQLConnection connection = new MySQLConnection();
+            Set<Item> items = connection.getFavoriteItems(userId);
+            connection.close();
             try {
-                return new HashSet<>(Arrays.asList(objectMapper.readValue(cachedResult, Item[].class)));
+                return objectMapper.writeValueAsString(items);
             } catch (Exception e) {
                 e.printStackTrace();
+                return "[]";
             }
+        });
+        if (cachedResult == null || cachedResult.isEmpty()) {
+            return new HashSet<>();
         }
-
-        MySQLConnection connection = new MySQLConnection();
-        Set<Item> items = connection.getFavoriteItems(userId);
-        connection.close();
         try {
-            redisCacheService.setFavoriteResult(userId, objectMapper.writeValueAsString(items));
+            return new HashSet<>(Arrays.asList(objectMapper.readValue(cachedResult, Item[].class)));
         } catch (Exception e) {
             e.printStackTrace();
+            return new HashSet<>();
         }
-        return items;
     }
 
     public void removeFavorite(String userId, String itemId) {

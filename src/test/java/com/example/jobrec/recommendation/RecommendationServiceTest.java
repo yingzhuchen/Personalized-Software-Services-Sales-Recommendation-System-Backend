@@ -1,8 +1,8 @@
 package com.example.jobrec.recommendation;
 
-import com.example.jobrec.db.MySQLConnection;
 import com.example.jobrec.entity.Item;
 import com.example.jobrec.external.SerpAPIClient;
+import com.example.jobrec.service.HistoryService;
 import com.example.jobrec.service.ProductSearchService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.when;
 
@@ -31,20 +32,20 @@ class RecommendationServiceTest {
     @Mock
     private ProductSearchService productSearchService;
 
+    @Mock
+    private HistoryService historyService;
+
     @InjectMocks
     private RecommendationService recommendationService;
 
     @Test
     void recommendItems_returnsEmptyListWhenUserHasNoKeywords() {
-        try (MockedConstruction<MySQLConnection> mysql = mockConstruction(MySQLConnection.class,
-                (mock, context) -> when(mock.getFavoriteItemIds("user-1")).thenReturn(Collections.emptySet()))) {
+        when(historyService.getFavorites("user-1")).thenReturn(Collections.emptySet());
+        when(profileService.getTopKeywords("user-1")).thenReturn(Collections.emptyList());
 
-            when(profileService.getTopKeywords("user-1")).thenReturn(Collections.emptyList());
+        List<Item> results = recommendationService.recommendItems("user-1", 37.4, -122.1);
 
-            List<Item> results = recommendationService.recommendItems("user-1", 37.4, -122.1);
-
-            assertTrue(results.isEmpty());
-        }
+        assertTrue(results.isEmpty());
     }
 
     @Test
@@ -62,13 +63,10 @@ class RecommendationServiceTest {
                 new HashSet<>(Collections.singletonList("analytics")),
                 false);
 
-        try (MockedConstruction<MySQLConnection> mysql = mockConstruction(MySQLConnection.class,
-                (mock, context) -> when(mock.getFavoriteItemIds("user-1"))
-                        .thenReturn(new HashSet<>(Collections.singletonList("innova-crm"))));
-             MockedConstruction<SerpAPIClient> serp = mockConstruction(SerpAPIClient.class,
+        try (MockedConstruction<SerpAPIClient> serp = mockConstruction(SerpAPIClient.class,
                      (mock, context) -> when(mock.search(any(), any(), anyString()))
                              .thenReturn(Collections.emptyList()))) {
-
+            when(historyService.getFavorites("user-1")).thenReturn(Collections.emptySet());
             when(profileService.getTopKeywords("user-1")).thenReturn(Arrays.asList("analytics", "crm"));
             when(productSearchService.searchCatalogByKeywords(Arrays.asList("analytics", "crm")))
                     .thenReturn(Collections.singletonList(catalogItem));
@@ -96,7 +94,7 @@ class RecommendationServiceTest {
                 new HashSet<>(Collections.singletonList("crm")),
                 false);
         String cachedJson = "[{\"id\":\"innova-crm\",\"title\":\"INNOVA CRM Platform\",\"source_type\":\"innova_catalog\",\"favorite\":false}]";
-        when(profileService.getCachedSearchResult(1.0, 2.0, "crm")).thenReturn(cachedJson);
+        when(profileService.getOrLoadSearchResult(eq(1.0), eq(2.0), eq("crm"), any())).thenReturn(cachedJson);
         when(profileService.parseItems(cachedJson)).thenReturn(Collections.singletonList(cachedItem));
 
         List<Item> results = recommendationService.searchProducts(1.0, 2.0, "crm");

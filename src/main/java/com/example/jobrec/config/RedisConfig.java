@@ -13,6 +13,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * Application code does not set TTL; when memory is full, Redis evicts
  * least-recently-used keys automatically.
  *
+ * Stampede protection when Redis is down (see application.properties):
+ *   Local L1 cache with stale-if-error
+ *   Request coalescing (singleflight) for identical origin loads
+ *   Per-JVM MySQL fallback bulkhead while the circuit is OPEN
+ *
  * Client resilience (see application.properties):
  *   spring.redis.timeout / connect-timeout — command & connect timeouts
  *   app.redis.circuit-breaker.* — fail-open circuit breaker thresholds
