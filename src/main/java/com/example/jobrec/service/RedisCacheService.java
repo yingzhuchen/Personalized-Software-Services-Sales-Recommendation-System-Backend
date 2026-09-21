@@ -264,12 +264,12 @@ public class RedisCacheService {
     private Map<String, Integer> readKeywordDocumentFrequenciesFromRedis(List<String> keywords) {
         Map<String, Integer> frequencies = executeRead(() -> {
             List<Object> values = redis.opsForHash().multiGet(CORPUS_KEYWORD_DF_KEY, new ArrayList<>(keywords));
-            Map<String, String> hash = new HashMap<>();
+            Map<String, Integer> hash = new HashMap<>();
             int index = 0;
             for (String keyword : keywords) {
                 Object value = values.get(index++);
                 if (value != null) {
-                    hash.put(keyword, value.toString());
+                    hash.put(keyword, Integer.parseInt(value.toString()));
                 }
             }
             return hash.isEmpty() ? null : hash;
@@ -279,9 +279,9 @@ public class RedisCacheService {
         if (frequencies == null) {
             return loaded;
         }
-        for (Map.Entry<String, String> entry : frequencies.entrySet()) {
-            loaded.put(entry.getKey(), Integer.parseInt(entry.getValue()));
-            l1.put(dfL1Key(entry.getKey()), entry.getValue());
+        for (Map.Entry<String, Integer> entry : frequencies.entrySet()) {
+            loaded.put(entry.getKey(), entry.getValue());
+            l1.put(dfL1Key(entry.getKey()), String.valueOf(entry.getValue()));
         }
         return loaded;
     }

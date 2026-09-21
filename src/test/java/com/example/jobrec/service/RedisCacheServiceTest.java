@@ -198,7 +198,12 @@ class RedisCacheServiceTest {
                     start.await();
                     return cacheService.getOrLoadFavoriteResult("user-1", () -> {
                         loads.incrementAndGet();
-                        Thread.sleep(60L);
+                        try {
+                            Thread.sleep(60L);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
                         return "[{\"id\":\"1\"}]";
                     });
                 }));

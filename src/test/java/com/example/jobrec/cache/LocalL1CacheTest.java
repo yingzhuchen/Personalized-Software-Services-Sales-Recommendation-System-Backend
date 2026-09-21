@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-class LocalL1CacheTest {
+public class LocalL1CacheTest {
     @Test
     void servesFreshEntriesAndHidesExpiredWhenStaleNotAllowed() {
         AtomicLong millis = new AtomicLong(1_000_000L);
@@ -56,7 +56,7 @@ class LocalL1CacheTest {
         assertEquals("[]", cache.get("search:crm", true));
     }
 
-    static Clock clock(AtomicLong millis) {
+    public static Clock clock(AtomicLong millis) {
         return new Clock() {
             @Override
             public ZoneOffset getZone() {
